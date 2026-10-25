@@ -1,0 +1,6 @@
+{
+  "name": "Astraforge",
+  "description": "Astraforge: Cosmic Mining — Mine worlds, evolve 1,001 equipment levels, colonize 10,000 planets, and forge your destiny.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
