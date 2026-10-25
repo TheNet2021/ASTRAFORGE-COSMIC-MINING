@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,7 +63,6 @@ fun SettingsDialog(
     onToggleReducedAnimations: () -> Unit = {},
     onToggleShake: () -> Unit,
     onToggleBatterySaver: () -> Unit,
-    onSetLanguage: (String) -> Unit = {},
     onResetGame: () -> Unit
 ) {
     var showConfirmReset by remember { mutableStateOf(false) }
@@ -73,6 +74,7 @@ fun SettingsDialog(
             color = Color(0xFF0A0F1D),
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.88f).dp)
                 .border(1.dp, Color(0xFF00F0FF).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         ) {
             Column(
@@ -236,47 +238,13 @@ fun SettingsDialog(
                 }
 
                 SettingToggleRow(
-                    label = "Battery Saver Mode (30 FPS)",
+                    label = "Battery Saver Mode (20 FPS)",
                     checked = uiState.batterySaverEnabled,
                     onCheckedChange = { onToggleBatterySaver() },
                     testTag = "setting_battery_toggle"
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
-
-                // Section 4: Localization
-                SettingsSubheader("LANGUAGE SELECTION")
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf("English", "Español", "Deutsch", "日本語").forEach { lang ->
-                        val isSelected = uiState.selectedLanguage == lang
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isSelected) Color(0x4400F0FF) else Color(0xFF1E293B))
-                                .border(
-                                    1.dp,
-                                    if (isSelected) Color(0xFF00F0FF) else Color(0xFF334155),
-                                    RoundedCornerShape(6.dp)
-                                )
-                                .clickable { onSetLanguage(lang) }
-                                .padding(vertical = 6.dp)
-                                .testTag("lang_$lang"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = lang,
-                                fontSize = 9.sp,
-                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
-                                color = if (isSelected) Color(0xFF00F0FF) else Color.LightGray,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 

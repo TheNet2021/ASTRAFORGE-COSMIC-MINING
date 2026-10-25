@@ -11,12 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.components.TabNavigation
@@ -51,6 +55,17 @@ fun AstraforgeApp(
     viewModel: GameViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            viewModel.setMusicPlaybackEnabled(event == Lifecycle.Event.ON_RESUME)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.setMusicPlaybackEnabled(false)
+        }
+    }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showAscensionDialog by remember { mutableStateOf(false) }
@@ -149,7 +164,11 @@ fun AstraforgeApp(
             uiState = uiState,
             onDismiss = { showSettingsDialog = false },
             onSetVolume = { viewModel.onSetSoundVolume(it) },
+            onSetMusicVolume = { viewModel.onSetMusicVolume(it) },
             onToggleMute = { viewModel.onToggleMute() },
+            onToggleVibration = { viewModel.onToggleVibration() },
+            onSetGraphicsQuality = { viewModel.onSetGraphicsQuality(it) },
+            onToggleReducedAnimations = { viewModel.onToggleReducedAnimations() },
             onToggleShake = { viewModel.onToggleScreenShake() },
             onToggleBatterySaver = { viewModel.onToggleBatterySaver() },
             onResetGame = { viewModel.onResetAllProgress() }

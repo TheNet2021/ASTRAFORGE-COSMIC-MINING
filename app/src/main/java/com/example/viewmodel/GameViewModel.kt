@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
@@ -87,7 +88,6 @@ data class GameUiState(
     val reducedAnimations: Boolean = false,
     val screenShakeEnabled: Boolean = true,
     val batterySaverEnabled: Boolean = false,
-    val selectedLanguage: String = "English",
     val activeTab: Int = 0,
     val isMiningActive: Boolean = true, // Continuous auto mining by default!
     val isOverdriveActive: Boolean = false,
@@ -150,6 +150,7 @@ data class GameUiState(
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = GameRepository(GameDatabase.getInstance(application).gameSaveDao())
+    private val settingsPrefs = application.getSharedPreferences("astra_settings", Context.MODE_PRIVATE)
     val soundSynth = SoundSynthesizer(application)
     val hapticManager = HapticManager(application)
     val particleManager = ParticleManager()
@@ -169,9 +170,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadSavedGame() {
         viewModelScope.launch {
             val loaded = repository.loadGame()
-            soundSynth.soundVolume = loaded.soundVolume
-            soundSynth.isMuted = loaded.isMuted
-            hapticManager.isEnabled = !loaded.isMuted
+            soundSynth.soundVolume = settingsPrefs.getFloat("sound_volume", loaded.soundVolume).coerceIn(0f, 1f)
+            val isMuted = settingsPrefs.getBoolean("muted", loaded.isMuted)
+            val vibrationEnabled = settingsPrefs.getBoolean("vibration", true)
+            val musicVolume = settingsPrefs.getFloat("music_volume", 0.7f).coerceIn(0f, 1f)
+            soundSynth.musicVolume = musicVolume
+            soundSynth.isMuted = isMuted
+            hapticManager.isEnabled = vibrationEnabled
 
             val planet = PlanetGenerator.getPlanet(loaded.currentPlanetNumber)
             val xpReq = calculateXpRequired(loaded.playerLevel)
@@ -232,13 +237,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     claimedAchievements = loaded.claimedAchievements,
                     statsTotalTaps = loaded.statsTotalTaps,
                     statsTotalOresMined = loaded.statsTotalOresMined,
-                    statsTotalCreditsEarned = loaded.statsTotalCreditsEarned,
+                    statsTotalCreditsEarned = loaded.statsTotalCreditsEarned + offlineCredits,
                     ascensionCount = loaded.ascensionCount,
                     ascensionStellarShards = loaded.ascensionStellarShards,
-                    soundVolume = loaded.soundVolume,
-                    isMuted = loaded.isMuted,
-                    screenShakeEnabled = loaded.screenShakeEnabled,
-                    batterySaverEnabled = loaded.batterySaverEnabled,
+                    soundVolume = settingsPrefs.getFloat("sound_volume", loaded.soundVolume).coerceIn(0f, 1f),
+                    musicVolume = musicVolume,
+                    isMuted = isMuted,
+                    vibrationEnabled = vibrationEnabled,
+                    graphicsQuality = settingsPrefs.getString("graphics_quality", "HIGH")
+                        ?.takeIf { it in setOf("ULTRA", "HIGH", "BALANCED", "LOW") } ?: "HIGH",
+                    reducedAnimations = settingsPrefs.getBoolean("reduced_animations", false),
+                    screenShakeEnabled = settingsPrefs.getBoolean("screen_shake", loaded.screenShakeEnabled),
+                    batterySaverEnabled = settingsPrefs.getBoolean("battery_saver", loaded.batterySaverEnabled),
                     offlineReward = offlineSummary
                 )
             }
@@ -247,6 +257,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startAnimationLoop() {
         viewModelScope.launch {
+            val displayMetrics = getApplication<Application>().resources.displayMetrics
             var lastTime = System.currentTimeMillis()
             var continuousDrillEffectTimer = 0
 
@@ -257,17 +268,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
                 particleManager.update()
 
-                // Spawn continuous micro-sparks from the automatic cutting tip
+                // Keep ambient effects restrained on reduced-power presets and place them using
+                // the device display size rather than assuming a single 1080x1920 canvas.
                 continuousDrillEffectTimer++
                 if (continuousDrillEffectTimer >= 12) {
                     continuousDrillEffectTimer = 0
-                    val res = _uiState.value.currentPlanet.primaryMineral
-                    particleManager.spawnSparks(
-                        origin = Offset(540f, 1080f),
-                        count = 2,
-                        primaryColor = Color(res.primaryColor),
-                        secondaryColor = Color.White
-                    )
+                    val effectState = _uiState.value
+                    if (!effectState.batterySaverEnabled && !effectState.reducedAnimations && effectState.graphicsQuality != "LOW") {
+                        val res = effectState.currentPlanet.primaryMineral
+                        particleManager.spawnSparks(
+                            origin = Offset(displayMetrics.widthPixels / 2f, displayMetrics.heightPixels * 0.56f),
+                            count = if (effectState.graphicsQuality == "BALANCED") 1 else 2,
+                            primaryColor = Color(res.primaryColor),
+                            secondaryColor = Color.White
+                        )
+                    }
                 }
 
                 _uiState.update { st ->
@@ -287,7 +302,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                val delayTime = if (_uiState.value.batterySaverEnabled) 33L else 16L
+                val frameState = _uiState.value
+                val delayTime = when {
+                    frameState.batterySaverEnabled -> 50L // cap at 20 fps to reduce display/GPU power
+                    frameState.reducedAnimations -> 100L // retain game-state updates, throttle visual animation
+                    frameState.graphicsQuality == "LOW" -> 50L
+                    frameState.graphicsQuality == "BALANCED" -> 33L
+                    else -> 16L
+                }
                 delay(delayTime)
             }
         }
@@ -335,6 +357,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     val continuousDmg = (baseAutoDmg * drillSpeedMult).roundToLong().coerceAtLeast(1L)
                     var hp = st.nodeCurrentHp - continuousDmg
                     var creditsEarned = st.credits
+                    var creditsEarnedThisTick = 0L
                     var newXp = st.playerXp
                     var pLevel = st.playerLevel
                     var xpReq = st.xpRequired
@@ -354,7 +377,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
                         val smeltingBonus = (st.researchLevels[TechNode.QUANTUM_SMELTING] ?: 0) * 0.20f
                         val valuePerUnit = (primeRes.baseValue * (1f + smeltingBonus)).roundToLong()
-                        creditsEarned += valuePerUnit * dropCount
+                        creditsEarnedThisTick = valuePerUnit * dropCount
+                        creditsEarned += creditsEarnedThisTick
                         newXp += 30L
                         hp = st.nodeMaxHp
                         totalOreTick += dropCount
@@ -392,7 +416,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                         xpRequired = xpReq,
                         activeBoosts = activeBoosts,
                         activeCosmicEvent = nextEvent,
-                        statsTotalOresMined = st.statsTotalOresMined + totalOreTick
+                        statsTotalOresMined = st.statsTotalOresMined + totalOreTick,
+                        statsTotalCreditsEarned = st.statsTotalCreditsEarned + creditsEarnedThisTick
                     )
                 }
 
@@ -416,12 +441,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         soundSynth.playDrillHit(1.4f)
         hapticManager.click()
 
-        particleManager.spawnSparks(
-            origin = touchOffset,
-            count = 14,
-            primaryColor = Color(0xFF00F0FF),
-            secondaryColor = Color.White
-        )
+        val effectCount = when {
+            st.batterySaverEnabled || st.reducedAnimations || st.graphicsQuality == "LOW" -> 0
+            st.graphicsQuality == "BALANCED" -> 7
+            else -> 14
+        }
+        if (effectCount > 0) {
+            particleManager.spawnSparks(
+                origin = touchOffset,
+                count = effectCount,
+                primaryColor = Color(0xFF00F0FF),
+                secondaryColor = Color.White
+            )
+        }
         particleManager.spawnFloatingText(
             origin = touchOffset,
             text = "OVERDRIVE! -$damage",
@@ -522,6 +554,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             it.copy(
                 credits = it.credits + ach.rewardCredits,
+                statsTotalCreditsEarned = it.statsTotalCreditsEarned + ach.rewardCredits,
                 darkMatter = it.darkMatter + ach.rewardDarkMatter,
                 claimedAchievements = it.claimedAchievements + achievementId
             )
@@ -818,9 +851,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update {
             val newMute = !it.isMuted
             soundSynth.isMuted = newMute
-            hapticManager.isEnabled = !newMute
+            hapticManager.isEnabled = it.vibrationEnabled
             it.copy(isMuted = newMute)
         }
+        persistSettings()
         saveCurrentGame()
     }
 
@@ -828,58 +862,83 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val clamped = vol.coerceIn(0f, 1f)
         soundSynth.soundVolume = clamped
         _uiState.update { it.copy(soundVolume = clamped) }
-        saveCurrentGame()
+        persistSettings()
     }
 
     fun onSetMusicVolume(vol: Float) {
         val clamped = vol.coerceIn(0f, 1f)
+        soundSynth.musicVolume = clamped
         _uiState.update { it.copy(musicVolume = clamped) }
-        saveCurrentGame()
+        persistSettings()
     }
 
     fun onToggleVibration() {
         _uiState.update {
             val next = !it.vibrationEnabled
-            hapticManager.isEnabled = next && !it.isMuted
+            hapticManager.isEnabled = next
             if (next) hapticManager.click()
             it.copy(vibrationEnabled = next)
         }
+        persistSettings()
         saveCurrentGame()
     }
 
     fun onSetGraphicsQuality(quality: String) {
-        _uiState.update { it.copy(graphicsQuality = quality) }
+        val valid = quality.takeIf { it in setOf("ULTRA", "HIGH", "BALANCED", "LOW") } ?: "HIGH"
+        _uiState.update { it.copy(graphicsQuality = valid) }
+        persistSettings()
         saveCurrentGame()
     }
 
     fun onToggleReducedAnimations() {
         _uiState.update { it.copy(reducedAnimations = !it.reducedAnimations) }
-        saveCurrentGame()
-    }
-
-    fun onSetLanguage(language: String) {
-        _uiState.update { it.copy(selectedLanguage = language) }
+        persistSettings()
         saveCurrentGame()
     }
 
     fun onToggleScreenShake() {
         _uiState.update { it.copy(screenShakeEnabled = !it.screenShakeEnabled) }
+        persistSettings()
         saveCurrentGame()
     }
 
     fun onToggleBatterySaver() {
         _uiState.update { it.copy(batterySaverEnabled = !it.batterySaverEnabled) }
+        persistSettings()
         saveCurrentGame()
+    }
+
+    private fun persistSettings() {
+        val state = _uiState.value
+        settingsPrefs.edit()
+            .putFloat("sound_volume", state.soundVolume)
+            .putFloat("music_volume", state.musicVolume)
+            .putBoolean("muted", state.isMuted)
+            .putBoolean("vibration", state.vibrationEnabled)
+            .putString("graphics_quality", state.graphicsQuality)
+            .putBoolean("reduced_animations", state.reducedAnimations)
+            .putBoolean("screen_shake", state.screenShakeEnabled)
+            .putBoolean("battery_saver", state.batterySaverEnabled)
+            .apply()
     }
 
     fun onResetAllProgress() {
         viewModelScope.launch {
             repository.resetGame()
             val resetPlanet = PlanetGenerator.getPlanet(1)
+            val settings = _uiState.value
             _uiState.value = GameUiState(
                 currentPlanet = resetPlanet,
                 nodeCurrentHp = resetPlanet.nodeMaxHp,
-                nodeMaxHp = resetPlanet.nodeMaxHp
+                nodeMaxHp = resetPlanet.nodeMaxHp,
+                soundVolume = settings.soundVolume,
+                musicVolume = settings.musicVolume,
+                isMuted = settings.isMuted,
+                vibrationEnabled = settings.vibrationEnabled,
+                graphicsQuality = settings.graphicsQuality,
+                reducedAnimations = settings.reducedAnimations,
+                screenShakeEnabled = settings.screenShakeEnabled,
+                batterySaverEnabled = settings.batterySaverEnabled
             )
         }
     }
@@ -917,6 +976,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.saveGame(loaded)
         }
+    }
+
+    fun setMusicPlaybackEnabled(enabled: Boolean) {
+        soundSynth.setMusicPlaybackEnabled(enabled)
+    }
+
+    override fun onCleared() {
+        soundSynth.setMusicPlaybackEnabled(false)
+        soundSynth.release()
+        super.onCleared()
     }
 
     private fun calculateXpRequired(level: Int): Long {

@@ -16,8 +16,92 @@ import kotlin.math.sin
 
 class SoundSynthesizer(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Default)
-    var isMuted: Boolean = false
-    var soundVolume: Float = 0.8f
+    @Volatile var isMuted: Boolean = false
+        set(value) {
+            field = value
+            refreshAmbientMusic()
+        }
+    @Volatile var soundVolume: Float = 0.8f
+    @Volatile var musicVolume: Float = 0.7f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            refreshAmbientMusic()
+        }
+
+    private val musicLock = Any()
+    private var ambientTrack: AudioTrack? = null
+    private var musicPlaybackEnabled = false
+
+    fun setMusicPlaybackEnabled(enabled: Boolean) {
+        musicPlaybackEnabled = enabled
+        refreshAmbientMusic()
+    }
+
+    private fun refreshAmbientMusic() {
+        synchronized(musicLock) {
+            val audible = musicPlaybackEnabled && !isMuted && musicVolume > 0.005f
+            var track = ambientTrack
+            if (track == null && audible) {
+                track = createAmbientTrack()
+                ambientTrack = track
+            }
+            if (track == null) return
+            try {
+                track.setVolume(if (audible) musicVolume * 0.5f else 0f)
+                if (audible && track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
+                if (!audible && track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause()
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun createAmbientTrack(): AudioTrack? {
+        return try {
+            val sampleRate = 22050
+            val samples = ShortArray(sampleRate * 8)
+            for (i in samples.indices) {
+                val t = i.toDouble() / sampleRate
+                val fade = minOf(1.0, i.toDouble() / 1200.0, (samples.size - i).toDouble() / 1200.0)
+                val tone = sin(2.0 * PI * 110.0 * t) +
+                    0.38 * sin(2.0 * PI * 165.0 * t) +
+                    0.20 * sin(2.0 * PI * 220.0 * t)
+                samples[i] = (tone * fade * Short.MAX_VALUE * 0.12).toInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            }
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(samples.size * 2)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            if (track.state != AudioTrack.STATE_INITIALIZED || track.write(samples, 0, samples.size) < 0) {
+                track.release()
+                null
+            } else {
+                track.setLoopPoints(0, samples.size, -1)
+                track
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun release() {
+        synchronized(musicLock) {
+            try { ambientTrack?.release() } catch (_: Exception) {}
+            ambientTrack = null
+        }
+    }
 
     fun playDrillHit(pitchMultiplier: Float = 1.0f) {
         if (isMuted || soundVolume <= 0.05f) return

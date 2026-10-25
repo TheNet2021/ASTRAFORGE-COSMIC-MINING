@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -92,6 +94,12 @@ fun MiningScreen(
         )
 
         // 3. Dynamic Particle Overlay Canvas (Sparks, floating text, mineral shards)
+        val floatingTextPaint = remember {
+            android.graphics.Paint().apply {
+                isAntiAlias = true
+                typeface = android.graphics.Typeface.MONOSPACE
+            }
+        }
         Canvas(modifier = Modifier.fillMaxSize()) {
             particleManager.particles.forEach { p ->
                 drawCircle(
@@ -101,20 +109,15 @@ fun MiningScreen(
                 )
             }
 
-            val nativePaint = android.graphics.Paint().apply {
-                isAntiAlias = true
-                typeface = android.graphics.Typeface.MONOSPACE
-            }
-
             particleManager.floatingTexts.forEach { ft ->
-                nativePaint.textSize = if (ft.isCritical) 44f else 32f
-                nativePaint.color = ft.color.copy(alpha = ft.alpha).hashCode()
-                nativePaint.isFakeBoldText = ft.isCritical
+                floatingTextPaint.textSize = if (ft.isCritical) 44f else 32f
+                floatingTextPaint.color = ft.color.copy(alpha = ft.alpha).toArgb()
+                floatingTextPaint.isFakeBoldText = ft.isCritical
                 drawContext.canvas.nativeCanvas.drawText(
                     ft.text,
                     ft.x,
                     ft.y,
-                    nativePaint
+                    floatingTextPaint
                 )
             }
         }

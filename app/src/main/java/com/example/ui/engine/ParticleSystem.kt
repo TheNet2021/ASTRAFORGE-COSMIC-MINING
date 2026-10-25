@@ -52,9 +52,7 @@ class ParticleManager {
         // Limit total particle cap to keep 60fps solid on mobile
         if (particles.size > 120) {
             val excess = particles.size - 120
-            for (k in 0 until excess) {
-                if (particles.isNotEmpty()) particles.removeAt(0)
-            }
+            particles.removeAll(particles.take(excess).toSet())
         }
     }
 
@@ -77,29 +75,25 @@ class ParticleManager {
     }
 
     fun update() {
-        // Update particles
-        val pIter = particles.iterator()
-        while (pIter.hasNext()) {
-            val p = pIter.next()
+        // Mutate the lightweight particle objects in place and batch removals. Removing each
+        // expired item from a CopyOnWriteArrayList separately clones its backing array each time.
+        val expiredParticles = mutableListOf<Particle>()
+        particles.forEach { p ->
             p.x += p.vx
             p.y += p.vy
-            p.vy += 0.25f // gentle gravity
+            p.vy += 0.25f
             p.life -= p.decayRate
-            if (p.life <= 0f) {
-                particles.remove(p)
-            }
+            if (p.life <= 0f) expiredParticles.add(p)
         }
+        if (expiredParticles.isNotEmpty()) particles.removeAll(expiredParticles.toSet())
 
-        // Update floating texts
-        val tIter = floatingTexts.iterator()
-        while (tIter.hasNext()) {
-            val t = tIter.next()
-            t.y -= 2.2f // float upwards
-            t.alpha -= 0.03f
-            if (t.alpha <= 0f) {
-                floatingTexts.remove(t)
-            }
+        val expiredTexts = mutableListOf<FloatingText>()
+        floatingTexts.forEach { text ->
+            text.y -= 2.2f
+            text.alpha -= 0.03f
+            if (text.alpha <= 0f) expiredTexts.add(text)
         }
+        if (expiredTexts.isNotEmpty()) floatingTexts.removeAll(expiredTexts.toSet())
     }
 
     fun clear() {

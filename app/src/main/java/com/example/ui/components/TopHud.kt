@@ -33,6 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -119,12 +121,13 @@ fun TopHud(
                             .background(Color(0x3300F0FF))
                             .border(1.dp, Color(0xFF00F0FF), RoundedCornerShape(8.dp))
                             .clickable { onOpenAstraAi() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 5.dp, vertical = 8.dp)
+                            .semantics { contentDescription = "Open ASTRA-AI assistant" }
                             .testTag("open_ai_chat_button")
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "🤖 ASTRA-AI",
+                                text = "🤖 AI",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black,
                                 color = Color(0xFF00F0FF),
@@ -142,11 +145,12 @@ fun TopHud(
                             .background(Color(0x33A855F7))
                             .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(8.dp))
                             .clickable { onOpenAscension() }
-                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                            .padding(horizontal = 7.dp, vertical = 8.dp)
+                            .semantics { contentDescription = "Cosmic ascension" }
                             .testTag("ascension_button")
                     ) {
                         Text(
-                            text = "⚡ ASCEND",
+                            text = "ASC",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
                             color = Color(0xFFC084FC)
