@@ -1,3 +1,4 @@
+
 name: Build Android APK
 
 on:
@@ -28,9 +29,11 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK
         if: success()
@@ -39,3 +42,4 @@ jobs:
           name: ASTRAFORGE-debug-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          
