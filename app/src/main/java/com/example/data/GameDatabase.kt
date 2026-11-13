@@ -15,15 +15,17 @@ import kotlinx.coroutines.flow.Flow
 @Entity(tableName = "game_save")
 data class GameSaveEntity(
     @PrimaryKey val id: Int = 1,
-    val credits: Long = 100L,
+    // Keep fresh-save defaults aligned with GameUiState so the first load does not
+    // replace the intended starter credits and inventory with an empty save.
+    val credits: Long = 350L,
     val darkMatter: Long = 0L,
-    val energy: Int = 0,
+    val energy: Int = 15,
     val playerLevel: Int = 1,
     val playerXp: Long = 0L,
     val equipmentLevel: Int = 0,
     val currentPlanetNumber: Int = 1,
     val unlockedPlanetsCsv: String = "1",
-    val inventoryJson: String = "{}",
+    val inventoryJson: String = "{\"stone\":30}",
     val dronesJson: String = "[]",
     val facilitiesJson: String = "{}",
     val discoveredRelicsCsv: String = "",
