@@ -39,6 +39,9 @@ jobs:
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
+      - name: Verify Debug Keystore
+        run: test -f debug.keystore
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
